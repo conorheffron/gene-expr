@@ -1,0 +1,710 @@
+---
+title: "Assignment 2: Gene Expression Analysis & Interpretation"
+author: "Conor Heffron - 23211267"
+bibliography: references.bib
+format:
+  html:
+   embed-resources: true
+   code-fold: true
+   code-tools: true
+  pdf: default
+callout-appearence: simple
+---
+
+::: {.callout-tip title="Introduction"}
+-   In this report, I will analyse a publicly available dataset based on clinical breast cancer data. Breast cancer is the most diagnosed cancer in women. There are several subtypes of diseases characterized by different genetic drivers for cancer risk and tumour growth. The human epidermal growth factor receptor 2 amplified (HER2: ERBB2 / ERBB2IP) breast cancer is one of the most aggressive subtypes. In addition, I will investigate HER3 (ERBB3), HER4 (ERBB4), PIK3C2B, MDM4, LRRN2, NFASC, KLHDC8A, and CDK18 gene mutations. Although there are targeted therapies that have been developed to treat these cancer cases, the response rate ranges from 40% - 50%. I will download, decompress, clean and process the TCGA RNASeq data for breast cancer from cbioportal and identify the differentially expressed genes between ERBB2 / ERBB2IP, ERBB3, ERBB4, PIK3C2B, MDM4, LRRN2, NFASC, KLHDC8A, and CDK18 cancer tumours.
+
+::: {.callout-note}
+- The dataset can be downloaded from this link:
+  - <https://www.cbioportal.org/study/summary?id=brca_tcga_pan_can_atlas_2018>.
+:::
+:::
+
+::: {.callout-tip title="Methods Overview"}
+-   The methods to import data are from the `rio` package. To manipulate, analyse and query the data the `tidyverse` package includes several libraries. In particular, I have heavily used the `dplyr` package and methods such as **filter** to generate summary tables after data analysis and enrichment processes which are described and commented in the code chunks in an incremental fashion. I have implemented and imported a utility script written in R to assist in the loading, analysis, and aggregation of the TCGA data. The analysis was completed in a step by step fashion to help with my biological interpretation of the results of this analysis. This helped with the selection of features and values for deeper analysis and investigation of smaller subsets of samples.
+:::
+
+::: {.callout-tip title="Biological Interpretation"}
+- The BRCA1 gene mutation is heavily associated with breast cancer. People who carry this gene mutation, have a hightened risk of developing cancer over time. Carriers of the BRCA1 gene often develop triple-negative, basal-like, aggressive breast tumours. Hormone signalling is pertinent in the inception of BRCA1 mutant breast cancers. Progesterone (PR) levels are clearly higher in BRCA1 mutation carriers and they have a higher risk of developing breast cancer with a low survival rate.
+- HER2 is a member of the human Epidermal Growth Factor Receptor (EGFR) family, which actuates the signalling pathways that promote cell proliferation & survival by dimerization with other EGFR family members. HER2 breast cancers are likely to benefit from chemotherapy and treatment targeted to HER2.
+- EGFR is a protein located on cells that help them to grow. A mutation in the EFGR gene can compel excessive growth which can cause cancer.
+- There are different breast cancer groups taken into account during the TCGA data analysis  segments of this report. The main groups include Luminal tumours (A & B). Luminal A are tumours that are Oestrogen+ (ER+) & PR+ & HER2-. Luminal A breast cancers benefit from hormone therapy & may also benefit from chemotherapy. Luminal B breast cancerts can be HER- or HER+ & ER+. HER2 breast cancers are PR+.
+- HER3 is becoming a prominent biomarker for breast cancers (HER3 mRNA is expressed as Luminal tumours or ER+) as it is essential for cell survival in Luminal A and Luminal B but not basal normal mammary epithelium (basal like or triple negative breast cancers). Triple negative is the most aggresive form of breast cancer as they can groq and spread more quickly. The most difficult to treat compared to other invasive types of breast cancer because the cancer cells do not have the Oestrogen or Progesterone receptors or enough of the HER2 protein to make hormone therapy or targeted HER2 drugs work.
+- HER4 expression in Oestrogen receptor-positive breast cancer is associated with decreased sensitivity to tamoxifen treatment and reduced overall survival of post-menopausal women.
+:::
+
+::: {.callout-tip title="Incremental Analysis, Code & Results"}
+- The following graphics and summaries have the corresponding code chunks that shows how my analysis of the TCGA data evolved as I noticed patterns related to ER+, HER2, and upgraded/downgraded gene mutations.
+:::
+
+::: {.callout-tip title="Load packages, functions / methods and scripts"}
+```{r}
+library(knitr)
+library(readr)
+library(rio)
+library(tools)
+library(conflicted)  
+library(dplyr)
+library(tibble)
+suppressMessages(suppressWarnings(library(DESeq2)))
+library(ggplot2)
+
+# resolve conflicts
+suppressMessages(suppressWarnings(conflict_prefer("filter", "dplyr")))
+suppressMessages(suppressWarnings(conflict_prefer("lag", "dplyr")))
+suppressMessages(suppressWarnings(conflict_prefer("count", "dplyr")))
+suppressMessages(suppressWarnings(conflict_prefer("select", "dplyr")))
+suppressMessages(suppressWarnings(conflicts_prefer(GenomicRanges::setdiff)))
+
+suppressMessages(suppressWarnings(source("assignment-2-utils.R")))
+```
+:::
+
+::: {.callout-note}
+- Download the dataset and save to working directory (WD), see link to zip / tarball at <https://www.cbioportal.org/study/summary?id=brca_tcga_pan_can_atlas_2018>.
+
+```{r}
+path_wd <- "/Users/conorheffron/Desktop/assignment-2/"
+setwd(path_wd)
+```
+:::
+::: {.callout-tip title="Untar the folder and extract the files"}
+
+```{r}
+dir_name <- "brca_tcga_pan_can_atlas_2018"
+extension <- ".tar.gz"
+untar(paste(dir_name, extension, sep=""), files = NULL, list = FALSE, exdir = ".",
+      extras = NULL, verbose = FALSE,
+      restore_times =  TRUE,
+      support_old_tars = Sys.getenv("R_SUPPORT_OLD_TARS", FALSE),
+      tar = Sys.getenv("TAR"))
+```
+:::
+::: {.callout-important}
+- Read the RNA Sequence data file: `data_mrna_seq_v2_rsem.txt`
+
+```{r}
+data_mrna <- import_data(dir_name, "^data_mrna_seq_v2_rsem.txt", 0)
+```
+:::
+::: {.callout-important}
+- Read the Patient Data file: `data_clinical_patient.txt`
+
+```{r}
+data_clinical <- import_data(dir_name, "^data_clinical_patient", 4)
+```
+:::
+::: {.callout-important}
+- Read the Copy Number Aberrations (CNA) Data: `data_cna.txt`
+
+```{r}
+data_cna <- import_data(dir_name, "^data_cna", 0)
+```
+:::
+::: {.callout-important}
+- Read the Samples Data: `data_clinical_sample.txt`
+
+```{r}
+data_clinical_sample <- import_data(dir_name, "^data_clinical_sample", 4)
+```
+:::
+::: {.callout-important}
+- Create metadata using the Seq IDs of ERBB2+.
+
+```{r}
+keep <- !duplicated(data_mrna$data_mrna_seq_v2_rsem[, 1])
+temp_df_mrna <- data_mrna$data_mrna_seq_v2_rsem[keep,]
+temp_df_mrna <- rownames_to_column(as.data.frame(t(data_mrna$data_mrna_seq_v2_rsem |> filter(grepl("ERBB", Hugo_Symbol) | grepl("FAM72C", Hugo_Symbol) | grepl("SRGAP2D", Hugo_Symbol) | grepl("MDM4", Hugo_Symbol) | grepl("PIK3C2B", Hugo_Symbol) | grepl("LRRN2", Hugo_Symbol) | grepl("NFASC", Hugo_Symbol) | grepl("KLHDC8A", Hugo_Symbol) | grepl("LEMD1-AS1", Hugo_Symbol) | grepl("CDK18", Hugo_Symbol) | grepl("PLEKHA6", Hugo_Symbol)))), "row_names")
+
+colnames(temp_df_mrna) <- temp_df_mrna[1,]
+df_mrna_seq <- temp_df_mrna[-c(1, 2),]
+df_mrna_seq <- df_mrna_seq |> dplyr::rename(PATIENT_ID_REF = Hugo_Symbol)
+df_mrna_seq <- df_mrna_seq |> relocate(PATIENT_ID_REF)
+df_mrna_seq[, 2:5] <- sapply(df_mrna_seq[, 2:5], as.numeric)
+rownames(df_mrna_seq) <- NULL
+df_mrna_seq <- df_mrna_seq %>% rename_with(~ paste(., "SEQ", sep = "_"))
+df_mrna_seq$PATIENT_ID <- substr(df_mrna_seq$PATIENT_ID_REF_SEQ, 1, nchar(df_mrna_seq$PATIENT_ID_REF_SEQ) - 3)
+df_mrna_seq <- df_mrna_seq |> relocate(PATIENT_ID)
+```
+:::
+::: {.callout-important}
+- Create metadata using the CNA level IDs of ERBB2+ features etc.
+
+```{r}
+temp_cna_df <- data_cna$data_cna
+df_cna_ids <- rownames_to_column(temp_cna_df, "row_names")
+df_cna_ids <- setNames(data.frame(t(temp_cna_df[,-1])), temp_cna_df[,1])
+
+erbb2_cols <- df_cna_ids[, grepl("ERBB", names(df_cna_ids)) | grepl("FAM72C", names(df_cna_ids)) | grepl("SRGAP2D", names(df_cna_ids)) | grepl("MDM4", names(df_cna_ids)) | grepl("PIK3C2B", names(df_cna_ids)) | grepl("LRRN2", names(df_cna_ids)) | grepl("NFASC", names(df_cna_ids)) | grepl("KLHDC8A", names(df_cna_ids)) | grepl("LEMD1-AS1", names(df_cna_ids)) | grepl("CDK18", names(df_cna_ids)) | grepl("PLEKHA6", names(df_cna_ids))]
+
+erbb2_cols$PATIENT_ID_REF <- rownames(erbb2_cols)
+erbb2_cols <- erbb2_cols |> relocate(PATIENT_ID_REF)
+rownames(erbb2_cols) <- NULL
+erbb2_cols = erbb2_cols[-1,]
+erbb2_cols$PATIENT_ID <- substr(erbb2_cols$PATIENT_ID_REF, 1, nchar(erbb2_cols$PATIENT_ID_REF) - 3)
+```
+:::
+::: {.callout-important}
+- Match the RNA Seq data with the CNA ids & the Patient Data
+  -   Pathway Enrichment (Combination of enriched patient, sample, CNA and RNA Sequence data)
+
+```{r}
+# Merge RNA Seq data with CNA data  (ERBB2+ and other gene IDs meta data)
+df_clin <- merge(x = df_mrna_seq, y = erbb2_cols, by = "PATIENT_ID", all = TRUE)
+
+# Merge result with clinical patient data (data enrichment)
+df_clin <- merge(x = df_clin, y = data_clinical$data_clinical_patient, by = "PATIENT_ID", all = TRUE)
+
+# Merge in sample data by patient ID
+df_clin <- merge(x = df_clin, y = data_clinical_sample$data_clinical_sample, by = "PATIENT_ID", all = TRUE)
+```
+:::
+::: {.callout-note}
+- Check for top 10 mutations and have ER+ counts ready for amplified comparison (sums)
+
+```{r}
+temp_cna_df <- data_cna$data_cna
+temp_cna_df[temp_cna_df < 0] <- 0
+r_sums_cna <- temp_cna_df %>% 
+  mutate(rowsums = select(., -c(1:2)) %>% rowSums(na.rm = TRUE))
+r_sums_cna_ss <- select(r_sums_cna, c(Hugo_Symbol, rowsums))
+all_r_sums_cna <- r_sums_cna_ss[order(r_sums_cna_ss$rowsums, decreasing = T),]
+ebbr_r_sums_cna <- all_r_sums_cna |> filter(grepl("ERBB", Hugo_Symbol))
+```
+:::
+::: {.callout-warning}
+- **Equivalent Summary Table Snippet** 
+  - (First High Level breakdown, followed by further breakdown with SEQ data and then ER+ data)
+
+![](images/cbioportal-cancer-type-det.png).
+
+```{r}
+count_agg(data_clinical_sample$data_clinical_sample, "CANCER_TYPE_DETAILED", n_results=20, digits=0)
+count_agg(df_clin, "CANCER_TYPE_DETAILED", n_results=20, digits=2)
+count_agg(df_clin |> filter(ERBB2_SEQ > 0 & ERBB2 > 0), "CANCER_TYPE_DETAILED", n_results=20, digits=2)
+```
+:::
+
+::: {.callout-warning}
+- **Pie Charts** from <https://www.cbioportal.org/study/summary?id=brca_tcga_pan_can_atlas_2018> replicated as Summary Tables:
+
+```{r}
+count_agg(df_clin, "OS_STATUS", n_results=20, digits=2)
+count_agg(df_clin, "SEX", n_results=20, digits=2)
+count_agg(df_clin, "ETHNICITY", n_results=20, digits=2)
+count_agg(df_clin, "RACE", n_results=20, digits=2)
+count_agg(df_clin, "SUBTYPE", n_results=20, digits=2)
+```
+- **Equivalent Charts Snippet**
+
+![](images/cbioportal-pie-charts.png).
+:::
+::: {.callout-important} 
+- **Not Amplified Summary Tables by other enrichment features**
+  -   Cancer type, cancer sub type, patient cancer status.
+
+```{r}
+count_agg(df_clin, "CANCER_TYPE_ACRONYM", n_results=20, digits=2) 
+count_agg(df_clin, "SUBTYPE", n_results=20, digits=2)
+count_agg(df_clin, "PERSON_NEOPLASM_CANCER_STATUS", n_results=20, digits=2)
+```
+:::
+::: {.callout-important}
+- **ER+ Summary Tables**
+
+```{r}
+count_agg(df_clin, "ERBB2", n_results=20, digits=2)
+count_agg(df_clin, "ERBB2IP", n_results=20, digits=2)
+count_agg(df_clin, "ERBB3", n_results=20, digits=2)
+count_agg(df_clin, "ERBB4", n_results=20, digits=2)
+```
+:::
+::: {.callout-important}
+- **ERBB2 Amplified data grouped by other columns**
+
+```{r}
+count_agg(df_clin |> filter(ERBB2 > 0 & ERBB2_SEQ > 0), "CANCER_TYPE_ACRONYM", n_results=20, digits=2) 
+count_agg(df_clin |> filter(ERBB2 > 0 & ERBB2_SEQ > 0), "SUBTYPE", n_results=20, digits=2)
+count_agg(df_clin |> filter(ERBB2 > 0 & ERBB2_SEQ > 0), "PERSON_NEOPLASM_CANCER_STATUS", n_results=20, digits=2)
+```
+:::
+::: {.callout-important}
+- **Amplified by ERBB2 & MRNA Seq**
+
+```{r}
+count_agg(df_clin |> filter(ERBB2 > 0 & ERBB2_SEQ > 0), "ERBB2", n_results=20, digits=2)
+```
+- **Amplified by ERBB2IP & MRNA Seq**
+
+```{r}
+count_agg(df_clin |> filter(ERBB2IP > 0 & ERBB2IP_SEQ > 0), "ERBB2IP", n_results=20, digits=2)
+```
+:::
+::: {.callout-important}
+- **Amplified by ERBB3 & MRNA Seq**
+```{r}
+count_agg(df_clin |> filter(ERBB3 > 0 & ERBB3_SEQ > 0), "ERBB3", n_results=20, digits=2)
+```
+- **Amplified by ERBB4 & MRNA Seq**
+```{r}
+count_agg(df_clin |> filter(ERBB4 > 0 & ERBB4_SEQ > 0), "ERBB4", n_results=20, digits=2)
+```
+:::
+::: {.callout-warning}
+- Load guide script and compare with count variable `test_meta_erbb2_length`.
+
+```{r}
+suppressWarnings(source("Assignment_Guide.R"))
+```
+
+-  **Verify** guide script count samples amplified by ERBB2 matches my code.
+  -   The counts now match after adding SEQ data filter for ERBB2 column (`ERBB2_SEQ > 0`)
+
+```{r}
+test_meta_erbb2_length <- length(meta_erbb2[meta_erbb2[,"ERBB2Amp"] == 1])
+test_meta_erbb2_length
+
+length(meta_erbb2[meta_erbb2[,"ERBB2Amp"] == 0])
+length(meta_erbb2[meta_erbb2[,"ERBB2Amp"] == 0]) + length(meta_erbb2[meta_erbb2[,"ERBB2Amp"] == 1])
+dim(rna_cna_sub)
+
+test_meta_erbb2_length == dim(df_clin |> filter(ERBB2_SEQ > 0 & ERBB2 > 0))[1]
+```
+
+:::
+
+::: {.callout-tip title="Differential Expression Analysis"}
+- **BRCA HER2+: Amplified by ERBB2 & Cancer Type Detailed Summary Table**
+
+```{r}
+count_agg(df_clin |> filter(ERBB2_SEQ > 0 & ERBB2 > 0 & SUBTYPE == "BRCA_Her2"), "CANCER_TYPE_DETAILED", n_results=20, digits=2)
+```
+
+- **BRCA HER2+: Amplified by ERBB2IP & Cancer Type Detailed Summary Table**
+
+```{r}
+count_agg(df_clin |> filter(ERBB2IP_SEQ > 0 & ERBB2IP > 0 & SUBTYPE == "BRCA_Her2"), "CANCER_TYPE_DETAILED", n_results=20, digits=2)
+```
+
+- **BRCA HER2+: Amplified by ERBB3 & Cancer Type Detailed Summary Table**
+
+```{r}
+count_agg(df_clin |> filter(ERBB3_SEQ > 0 & ERBB3 > 0 & SUBTYPE == "BRCA_Her2"), "CANCER_TYPE_DETAILED", n_results=20, digits=2)
+```
+::: {.callout-note}
+
+- ERBB4 not included as it is not relevant and no amplified results to summarise. 
+
+:::
+
+---
+
+- **BRCA HER2: ERBB2 Summary Tables**
+- Removing sequence data filter because `*_SEQ` filter for HER2- does not return any results
+
+```{r}
+count_agg(df_clin |> filter(SUBTYPE == "BRCA_Her2"), "ERBB2", n_results=20, digits=2)
+count_agg(df_clin |> filter(SUBTYPE == "BRCA_Her2"), "ERBB2IP", n_results=20, digits=2)
+```
+- **BRCA HER2: ERBB3 Summary Table**
+```{r}
+count_agg(df_clin |> filter(SUBTYPE == "BRCA_Her2"), "ERBB3", n_results=20, digits=2)
+```
+- **BRCA HER2: ERBB4 Summary Table**
+```{r}
+count_agg(df_clin |> filter(SUBTYPE == "BRCA_Her2"), "ERBB4", n_results=20, digits=2)
+```
+
+---
+
+- **BRCA HER2: Cancer Type Detailed Summary Table**
+
+```{r}
+count_agg(df_clin |> filter(SUBTYPE == "BRCA_Her2"), "CANCER_TYPE_DETAILED", n_results=20, digits=2)
+```
+
+- **BRCA HER2: Patient Status Summary Table**
+
+```{r}
+count_agg(df_clin |> filter(SUBTYPE == "BRCA_Her2"), "OS_STATUS", n_results=20, digits=2)
+```
+
+---
+
+- **BRCA HER2: MDM4 Summary Table**
+```{r}
+count_agg(df_clin |> filter(SUBTYPE == "BRCA_Her2"), "MDM4", n_results=20, digits=2)
+```
+- **BRCA HER2: LRRN2 Summary Table**
+
+```{r}
+count_agg(df_clin |> filter(SUBTYPE == "BRCA_Her2"), "LRRN2", n_results=20, digits=2)
+```
+- **BRCA HER2: PIK3C2B Summary Table**
+
+```{r}
+count_agg(df_clin |> filter(SUBTYPE == "BRCA_Her2"), "PIK3C2B", n_results=20, digits=2)
+```
+:::
+::: {.callout-important}
+- **Normalize data using DESeq2 and Run DE gene analysis, generate PCA plots**
+
+---
+
+  - **DE Seq Run 1 (ERBB2)**
+  - The 2 principal components are `ERBB2_SEQ` & `MDM4_SEQ` for `ERBB2` DE Seq Run grouped by patient status (`0` for living & `1` for deceased)
+```{r}
+# Status is 1 or 0 which maps -> 0:LIVING & 1:DECEASED
+de_ls1 <-
+  pre_process_df(df_clin |> mutate(Status = as.numeric(substr(OS_STATUS, 1, 1))) |> filter(ERBB2 > 0 &
+                                                                                             ERBB2_SEQ > 0) |>
+                   select(
+                     c(
+                       Status,
+                       ERBB2_SEQ,
+                       ERBB2IP_SEQ,
+                       ERBB3_SEQ,
+                       ERBB4_SEQ,
+                       MDM4_SEQ,
+                       LRRN2_SEQ,
+                       PIK3C2B_SEQ
+                     )
+                   ))
+dds_run1 <-
+  suppressMessages(suppressWarnings(DESeqDataSetFromMatrix(
+    countData = de_ls1$countdata,
+    colData = de_ls1$coldata,
+    design = ~ ERBB2_SEQ
+  )))
+ suppressMessages(suppressWarnings(de_seq_run("Status", dds_run1)))
+```
+
+---
+
+  - **DE Seq Run 2 (ERBB2IP)**
+  - The 2 principal components are `ERBB2IP_SEQ` & `PIK3C2B_SEQ` for `ERBB2IP` DE Seq Run grouped by patient status (`0` for living & `1` for deceased)
+```{r}
+de_ls2 <-
+  pre_process_df(df_clin |> mutate(Status = as.numeric(substr(OS_STATUS, 1, 1))) |> filter(ERBB2IP > 0 & ERBB2IP_SEQ > 0) |>
+                   select(
+                     c(
+                       Status,
+                       ERBB2_SEQ,
+                       ERBB2IP_SEQ,
+                       ERBB3_SEQ,
+                       ERBB4_SEQ,
+                       MDM4_SEQ,
+                       LRRN2_SEQ,
+                       PIK3C2B_SEQ
+                     )
+                   ))
+dds_run2 <-
+  suppressMessages(suppressWarnings(DESeqDataSetFromMatrix(
+    countData = de_ls2$countdata,
+    colData = de_ls2$coldata,
+    design = ~ ERBB2IP_SEQ
+  )))
+suppressMessages(suppressWarnings(de_seq_run("Status", dds_run2)))
+```
+
+---
+
+  - **DE Seq Run 3 (ERBB3)**
+  - The 2 principal components are `ERBB3_SEQ` & `MDM4_SEQ` for `ERBB3` DE Seq Run grouped by patient status (`0` for living & `1` for deceased)
+```{r}
+de_ls3 <-
+  pre_process_df(df_clin |> mutate(Status = as.numeric(substr(OS_STATUS, 1, 1))) |> filter(ERBB3 > 0 & ERBB3_SEQ > 0) |>
+                   select(
+                     c(
+                       Status,
+                       ERBB2_SEQ,
+                       ERBB2IP_SEQ,
+                       ERBB3_SEQ,
+                       ERBB4_SEQ,
+                       MDM4_SEQ,
+                       LRRN2_SEQ,
+                       PIK3C2B_SEQ
+                     )
+                   ))
+dds_run3 <-
+  suppressMessages(suppressWarnings(DESeqDataSetFromMatrix(
+    countData = de_ls3$countdata,
+    colData = de_ls3$coldata,
+    design = ~ ERBB3_SEQ
+  )))
+suppressMessages(suppressWarnings(de_seq_run("Status", dds_run3)))
+```
+
+---
+
+  - **DE Seq Run 4 (ERBB4)**
+  - The 2 principal components are `ERBB4_SEQ` & `MDM4_SEQ` for `ERBB4` DE Seq Run grouped by patient status (`0` for living & `1` for deceased)
+```{r}
+de_ls4 <-
+  pre_process_df(df_clin |> mutate(Status = as.numeric(substr(OS_STATUS, 1, 1))) |> filter(ERBB4 > 0 & ERBB4_SEQ > 0) |>
+                   select(
+                     c(
+                       Status,
+                       ERBB2_SEQ,
+                       ERBB2IP_SEQ,
+                       ERBB3_SEQ,
+                       ERBB4_SEQ,
+                       MDM4_SEQ,
+                       LRRN2_SEQ,
+                       PIK3C2B_SEQ
+                     )
+                   ))
+print(de_ls4$coldata)
+dds_run4 <-
+  suppressMessages(suppressWarnings(DESeqDataSetFromMatrix(
+    countData = de_ls4$countdata,
+    colData = de_ls4$coldata,
+    design = ~ ERBB4_SEQ
+  )))
+suppressMessages(suppressWarnings(de_seq_run("Status", dds_run4)))
+```
+
+---
+
+  - **DE Seq Run 5 (MDM4)**
+  - The 2 principal components are `MDM4_SEQ` & `ERBB2IP_SEQ` for `MDM4` DE Seq Run grouped by patient status (`0` for living & `1` for deceased)
+```{r}
+de_ls5 <-
+  pre_process_df(df_clin |> mutate(Status = as.numeric(substr(OS_STATUS, 1, 1))) |> filter(MDM4 > 0 & MDM4_SEQ > 0) |>
+                   select(
+                     c(
+                       Status,
+                       ERBB2_SEQ,
+                       ERBB2IP_SEQ,
+                       ERBB3_SEQ,
+                       ERBB4_SEQ,
+                       MDM4_SEQ,
+                       LRRN2_SEQ,
+                       PIK3C2B_SEQ
+                     )
+                   ))
+dds_run5 <-
+  suppressMessages(suppressWarnings(DESeqDataSetFromMatrix(
+    countData = de_ls5$countdata,
+    colData = de_ls5$coldata,
+    design = ~ MDM4_SEQ
+  )))
+suppressMessages(suppressWarnings(de_seq_run("Status", dds_run5)))
+```
+
+---
+
+  - **DE Seq Run 6 (LRNN2)**
+  - The 2 principal components are `LRRN2_SEQ` & `ERBB2IP_SEQ` for `LRNN2` DE Seq Run grouped by patient status (`0` for living & `1` for deceased)
+```{r}
+de_ls6 <-
+  pre_process_df(df_clin |> mutate(Status = as.numeric(substr(OS_STATUS, 1, 1))) |> filter(LRRN2 > 0 & LRRN2_SEQ > 0) |>
+                   select(
+                     c(
+                       Status,
+                       ERBB2_SEQ,
+                       ERBB2IP_SEQ,
+                       ERBB3_SEQ,
+                       ERBB4_SEQ,
+                       MDM4_SEQ,
+                       LRRN2_SEQ,
+                       PIK3C2B_SEQ
+                     )
+                   ))
+dds_run6 <-
+  suppressMessages(suppressWarnings(DESeqDataSetFromMatrix(
+    countData = de_ls6$countdata,
+    colData = de_ls6$coldata,
+    design = ~ LRRN2_SEQ
+  )))
+suppressMessages(suppressWarnings(de_seq_run("Status", dds_run6)))
+```
+
+---
+
+  - **DE Seq Run 7 (PIK3C2B)**
+  - The 2 principal components are `PIK3C2B_SEQ` & `ERBB2_SEQ` for `PIK3C2B` DE Seq Run grouped by patient status (`0` for living & `1` for deceased)
+```{r}
+de_ls7 <-
+  pre_process_df(df_clin |> mutate(Status = as.numeric(substr(OS_STATUS, 1, 1))) |> filter(PIK3C2B > 0 & PIK3C2B_SEQ > 0) |>
+                   select(
+                     c(
+                       Status,
+                       ERBB2_SEQ,
+                       ERBB2IP_SEQ,
+                       ERBB3_SEQ,
+                       ERBB4_SEQ,
+                       MDM4_SEQ,
+                       LRRN2_SEQ,
+                       PIK3C2B_SEQ
+                     )
+                   ))
+dds_run7 <-
+  suppressMessages(suppressWarnings(DESeqDataSetFromMatrix(
+    countData = de_ls7$countdata,
+    colData = de_ls7$coldata,
+    design = ~ PIK3C2B_SEQ
+  )))
+suppressMessages(suppressWarnings(de_seq_run("Status", dds_run7)))
+```
+
+---
+
+:::
+::: {.callout-important}
+- **Obtain Deferentially Expressed Genes**
+
+---
+
+  - **Top 10 Deferentially Expressed Genes Ranked (Upgraded)**
+
+```{r}
+knitr::kable(all_r_sums_cna[c(1:10),])
+
+# Hugo_Symbol	row_sums
+# MDM4	912 
+# PIK3C2B	910 
+# LRRN2	908 
+# NFASC	908 
+# KLHDC8A	907 
+# CDK18	907 
+# ** denotes have SEQ data AND CNA data
+```
+
+---
+
+- **ER+ Deferentially Expressed Genes Ranked (Upgraded)**
+
+```{r}
+knitr::kable(ebbr_r_sums_cna)
+```
+  
+---
+  
+  - **18 Downgraded Deferentially Expressed Genes Ranked**
+    - `TNFSF` gene mutations (The Tumour Necrosis Factor Superfam) occur three times (1 combination) in the 18 downgraded ranked gene mutations. This is significant as these gene mutations could also be targeted for breast cancer treatment.
+
+```{r}
+knitr::kable(all_r_sums_cna[c((dim(all_r_sums_cna)[1])[1]:(dim(all_r_sums_cna)[1]-18)),])
+```
+- **Summary Table per Selected Gene Mutation from Top 10 list (6x)**
+```{r}
+count_agg(df_clin, "MDM4", n_results=20, digits=2)
+```
+
+---
+
+```{r}
+count_agg(df_clin, "PIK3C2B", n_results=20, digits=2)
+```
+
+---
+
+```{r}
+count_agg(df_clin, "LRRN2", n_results=20, digits=2)
+```
+
+---
+
+```{r}
+count_agg(df_clin, "NFASC", n_results=20, digits=2)
+```
+
+---
+
+```{r}
+count_agg(df_clin, "KLHDC8A", n_results=20, digits=2)
+```
+
+---
+
+```{r}
+count_agg(df_clin, "CDK18", n_results=20, digits=2)
+```
+:::
+::: {.callout-important}
+- **Pathway Enrichment Analysis**
+  -   Create base data frame for amplified data (to filter down results) and then data frame for each ERBB2+ and top gene mutation columns amplified
+
+```{r}
+df_clin_amp_erbb_plus <- df_clin |> filter(ERBB2 > 0 | ERBB2IP > 0 | ERBB3 > 0 | ERBB2IP > 0) 
+
+df_clin_amp_erbb2 <- df_clin |> filter(ERBB2 > 0 & ERBB2_SEQ > 0)
+df_clin_amp_erbb2ip <- df_clin |> filter(ERBB2IP & ERBB2IP_SEQ > 0)
+df_clin_amp_erbb3 <- df_clin |> filter(ERBB3 > 0 & ERBB3_SEQ > 0)
+df_clin_amp_erbb4 <- df_clin |> filter(ERBB4 > 0 & ERBB4_SEQ > 0)
+
+df_clin_amp_top_features <- df_clin |> filter(MDM4 > 0 | PIK3C2B > 0 | LRRN2 > 0 | NFASC > 0 | KLHDC8A > 0 | CDK18 > 0) 
+
+df_clin_amp_mdm4 <- df_clin |> filter(MDM4 > 0 & MDM4_SEQ > 0)
+df_clin_amp_pik3c2b <- df_clin |> filter(PIK3C2B & PIK3C2B_SEQ > 0)
+df_clin_amp_lrrn2 <- df_clin |> filter(LRRN2 > 0 & LRRN2_SEQ > 0)
+df_clin_amp_nfasc <- df_clin |> filter(NFASC > 0 & NFASC_SEQ > 0)
+df_clin_amp_klhdc8a <- df_clin |> filter(KLHDC8A > 0 & KLHDC8A_SEQ > 0)
+df_clin_amp_cdk18 <- df_clin |> filter(CDK18 > 0 & CDK18_SEQ > 0)
+```
+:::
+::: {.callout-important}
+- Get the variance stabilized transformed expression values.
+
+```{r}
+erbbp_ls <- c(var(df_clin_amp_erbb2$ERBB2), var(df_clin_amp_erbb2ip$ERBB2IP), var(df_clin_amp_erbb3$ERBB3), var(df_clin_amp_erbb4$ERBB4))
+matrix_erbbp <- matrix(erbbp_ls)
+rownames(matrix_erbbp) <- c("ERBB2", "ERBB2IP", "ERBB3", "ERBB4")
+colnames(matrix_erbbp) <- c("Variance")
+matrix_erbbp
+# Show sorted matrix variance values in descending order
+matrix_erbbp[order(matrix_erbbp[,1],decreasing=T),]
+```
+
+---
+
+```{r}
+erbb_seq_ls <- c(var(df_clin_amp_erbb2$ERBB2_SEQ), var(df_clin_amp_erbb2ip$ERBB2IP_SEQ), var(df_clin_amp_erbb3$ERBB3_SEQ), var(df_clin_amp_erbb4$ERBB4_SEQ))
+matrix_erbb_seq <- matrix(erbb_seq_ls)
+rownames(matrix_erbb_seq) <- c("ERBB2_SEQ", "ERBB2IP_SEQ", "ERBB3_SEQ", "ERBB4_SEQ")
+colnames(matrix_erbb_seq) <- c("Variance")
+matrix_erbb_seq
+# Show sorted matrix variance values in descending order
+matrix_erbb_seq[order(matrix_erbb_seq[,1], decreasing=T),]
+```
+
+---
+
+```{r}
+# Other Top Mutations (6 from Top 10)
+top_6_ls <- c(var(df_clin_amp_mdm4$MDM4), var(df_clin_amp_pik3c2b$PIK3C2B), var(df_clin_amp_lrrn2$LRRN2), var(df_clin_amp_nfasc$NFASC), var(df_clin_amp_klhdc8a$KLHDC8A), var(df_clin_amp_cdk18$CDK18))
+matrix_top_6 <- matrix(top_6_ls)
+rownames(matrix_top_6) <- c("MDM4", "PIK3C2B", "LRRN2", "NFASC", "KLHDC8A", "CDK18")
+colnames(matrix_top_6) <- c("Variance")
+matrix_top_6
+# Show sorted matrix variance values in descending order
+matrix_top_6[order(matrix_top_6[,1],decreasing=T),]
+```
+:::
+
+::: {.callout-tip title="Conclusion"}
+-   Gene Mutations `PIK3C2B`, `MDM4`, and `LRRN2` are a good choice of gene IDs to target based on my analysis for treatment pathways. The amplified value frequencies and eventual variance values sorted in descending order from the available clinical & sequence data emphasizes this.
+- Phosphatidylinositol 4-Phosphate 3-Kinase, Catalytic Sub-Unit Type 2 Beta Gene (`PIK3C2B`). The PIK3C2B gene plays a part in hormone positive breast cancer cases. A mutation in the PIK3C2B gene can cause cells to split and replicate uncontrollably. It contributes to the growth of many cancers such as Metastatic Breast Cancer (MBC). If the tumour has a PIK3C2B mutation, then new treatments that specifically target this mutation could be used for treatment.
+- Mouse Double Minute 4 Homolog (`MDM4`) as a regulator of P53 is a protein coding gene. MDM4 promotes breast cancer and can impede the transcriptional activity of p53. The evidence is that MDM4 plays a notable part in breast cancer formation, progression and prognosis. It is reasonable to suggest this should be a targeted pathway.
+- MDM4 is a critical regulator of the tumour supressor p53. it restricts p53 transriptional activity & enables MDM2's E3 ligase activity toward p53. These functions of MDM4 are vital for normal cell function and a true response to stress. The MDM2 gene is a gene whose product binds to p53 and regulates its functions. A differential expression of MDM2 gene in relation to Oestregen receptor status was found in human breast cancer cell lines. MDM4 is a rational target for treating breast cancers with mutated p53. It is a key driver of triple negative cancers.
+- Leucine Rich Repeat Neuronal 2 (`LRRN2`) was found to be amplified and overexpressed in breast cancer along with MDM4.
+
+::: {.callout-note}
+```{r}
+top_6_seq_ls <- c(var(df_clin_amp_mdm4$MDM4_SEQ), var(df_clin_amp_pik3c2b$PIK3C2B_SEQ), var(df_clin_amp_lrrn2$LRRN2_SEQ), var(df_clin_amp_nfasc$NFASC_SEQ), var(df_clin_amp_klhdc8a$KLHDC8A_SEQ), var(df_clin_amp_cdk18$CDK18_SEQ))
+matrix_top_6_seq <- matrix(top_6_seq_ls)
+rownames(matrix_top_6_seq) <- c("MDM4", "PIK3C2B", "LRRN2", "NFASC", "KLHDC8A", "CDK18")
+colnames(matrix_top_6_seq) <- c("Variance")
+matrix_top_6_seq
+# Show sorted matrix variance values in descending order
+matrix_top_6_seq[order(matrix_top_6_seq[,1],decreasing=T),]
+```
+:::
+:::
+::: {.callout-tip title="Github"}
+-   <https://github.com/conorheffron/gene-expr>
+:::
+::: {.callout-tip title="References"}
+{{< include references.bib >}}
+:::
