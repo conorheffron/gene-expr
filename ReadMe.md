@@ -9,3 +9,5 @@ https://www.cbioportal.org/study/summary?id=brca_tcga_pan_can_atlas_2018.
 
 
 **Run All Code Chunks in _`assignment-2.qmd`_ from RStudio project**
+
+**Render PDF or HTML**
