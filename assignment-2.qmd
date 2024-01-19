@@ -255,6 +255,7 @@ count_agg(df_clin |> filter(ERBB4 > 0 & ERBB4_SEQ > 0), "ERBB4", n_results=20, d
 
 ```{r}
 suppressWarnings(source("Assignment_Guide.R"))
+suppressWarnings(source("./gene_mutation/gene_analysis.R"))
 ```
 
 -  **Verify** guide script count samples amplified by ERBB2 matches my code.
