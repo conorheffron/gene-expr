@@ -11,3 +11,5 @@ https://www.cbioportal.org/study/summary?id=brca_tcga_pan_can_atlas_2018.
 **Run All Code Chunks in _`assignment-2.qmd`_ from RStudio project**
 
 **Render PDF or HTML**
+
+### See full report in html or pdf format at: [Full Report](https://conorheffron.github.io/gene-expr/assignment-2.html)
