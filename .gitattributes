@@ -1,3 +1,3 @@
-*.ipynb linguist-language=Python
-*.html linguist-language=Python
-*.pdf linguist-language=Python
+*.R linguist-language=R
+*.html linguist-language=R
+*.pdf linguist-language=R
