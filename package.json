@@ -1,0 +1,8 @@
+{
+  "name": "gene-expr",
+  "version": "1.2.1",
+  "description": "Analysis of Breast Cancer Data",
+  "dependencies": {
+    "@primer/css": "17.0.1"
+  }
+}
